@@ -1,5 +1,6 @@
 // Copyright 2017 The Johns Hopkins University Applied Physics Laboratory.
-// Licensed under the MIT License. See LICENSE.txt in the project root for full license information.
+// Licensed under the MIT License. See LICENSE.txt in the project root for full
+// license information.
 
 // orthoimage.h
 //
@@ -286,55 +287,40 @@ namespace pubgeo {
         }
 
         // Read image from point cloud file.
-        bool readFromPointCloud(char *fileName, float gsdMeters, MIN_MAX_TYPE mode = MIN_VALUE) {
-            // Read a PSET file (e.g., BPF or LAS).
-            PointCloud pset;
-            bool ok = pset.Read(fileName);
-            if (!ok) return false;
+        bool readFromPointCloud(char* fileName, float gsdMeters,
+                                MIN_MAX_TYPE mode = MIN_VALUE) {
+            using namespace pdal;
 
-            // Calculate scale and offset for conversion to TYPE.
-            float minVal = pset.bounds.zMin - 1;    // Reserve zero for noData value
-            float maxVal = pset.bounds.zMax + 1;
-            float maxImageVal = (float) (pow(2.0, int(sizeof(TYPE) * 8)) - 1);
-            this->offset = minVal;
-            this->scale = (maxVal - minVal) / maxImageVal;
+            PipelineManager m;
+            StageFactory f;
 
-            // Calculate image width and height.
-            this->width = (unsigned int) ((pset.bounds.xMax - pset.bounds.xMin) / gsdMeters + 1);
-            this->height = (unsigned int) ((pset.bounds.yMax - pset.bounds.yMin) / gsdMeters + 1);
+            std::string driver = f.inferReaderDriver(fileName);
+            Stage& r = m.addReader(driver);
+            Option optsR("filename", fileName);
+            r.setOptions(optsR);
 
-            // Allocate an ortho image.
-            this->Allocate(this->width, this->height);
-            this->easting = pset.bounds.xMin;
-            this->northing = pset.bounds.yMin;
-            this->zone = pset.zone;
-            this->gsd = gsdMeters;
+            point_count_t np = m.execute();
 
-            // Copy points into the ortho image.
-            if (mode == MIN_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
-                }
-            } else if (mode == MAX_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    unsigned int x = int((pset.x(i) + pset.xOff - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
-                    unsigned int y = this->height - 1 - int((pset.y(i) + pset.yOff - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
-                    TYPE z = TYPE((pset.z(i) + pset.zOff - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
-                }
+            PointViewSet pvs = m.views();
+            if (pvs.size() > 1) {
+                std::cerr << "[PUBGEO::PointCloud::READ] File contains additional unread sets." << std::endl;
+                return false;
             }
-            return true;
+            PointViewPtr pv = *pvs.begin();
+            point_count_t numPoints = pv->size();
+            if (numPoints < 1) {
+                std::cerr << "[PUBGEO::PointCloud::READ] No points found in file." << std::endl;
+                return false;
+            }
+
+            return readFromPointView(pv, gsdMeters, mode);;
         }
 
         // Read image from PDAL PointView.
-        bool readFromPointView(pdal::PointViewPtr view, float gsdMeters, MIN_MAX_TYPE mode = MIN_VALUE) {
+        bool readFromPointView(pdal::PointViewPtr view, float gsdMeters,
+                               MIN_MAX_TYPE mode = MIN_VALUE) {
+            using namespace pdal;
+
             // Read a PSET file (e.g., BPF or LAS).
             PointCloud pset;
             bool ok = pset.Read(view);
@@ -360,28 +346,34 @@ namespace pubgeo {
 
             // Copy points into the ortho image.
             if (mode == MIN_VALUE) {
-               for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
-                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
-                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
+               for (PointId i = 0; i < view->size(); ++i) {
+                    double dx = view->getFieldAs<double>(Dimension::Id::X, i);
+                    double dy = view->getFieldAs<double>(Dimension::Id::Y, i);
+                    double dz = view->getFieldAs<double>(Dimension::Id::Z, i);
                     unsigned int x = int((dx - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
+                    if ((x < 0) || (x > this->width - 1))
+                        continue;
                     unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
+                    if ((y < 0) || (y > this->height - 1))
+                        continue;
                     TYPE z = TYPE((dz - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z < this->data[y][x])) this->data[y][x] = z;
+                    if ((this->data[y][x] == 0) || (z < this->data[y][x]))
+                        this->data[y][x] = z;
                 }
             } else if (mode == MAX_VALUE) {
-                for (unsigned long i = 0; i < pset.numPoints; i++) {
-                    double dx = view->getFieldAs<double>(pdal::Dimension::Id::X, i);
-                    double dy = view->getFieldAs<double>(pdal::Dimension::Id::Y, i);
-                    double dz = view->getFieldAs<double>(pdal::Dimension::Id::Z, i);
+                for (PointId i = 0; i < view->size(); ++i) {
+                    double dx = view->getFieldAs<double>(Dimension::Id::X, i);
+                    double dy = view->getFieldAs<double>(Dimension::Id::Y, i);
+                    double dz = view->getFieldAs<double>(Dimension::Id::Z, i);
                     unsigned int x = int((dx - easting) / gsd + 0.5);
-                    if ((x < 0) || (x > this->width - 1)) continue;
+                    if ((x < 0) || (x > this->width - 1))
+                        continue;
                     unsigned int y = this->height - 1 - int((dy - northing) / gsd + 0.5);
-                    if ((y < 0) || (y > this->height - 1)) continue;
+                    if ((y < 0) || (y > this->height - 1))
+                        continue;
                     TYPE z = TYPE((dz - this->offset) / this->scale);
-                    if ((this->data[y][x] == 0) || (z > this->data[y][x])) this->data[y][x] = z;
+                    if ((this->data[y][x] == 0) || (z > this->data[y][x]))
+                        this->data[y][x] = z;
                 }
             }
             return true;

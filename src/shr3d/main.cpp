@@ -1,5 +1,6 @@
 // Copyright 2017 The Johns Hopkins University Applied Physics Laboratory.
-// Licensed under the MIT License. See LICENSE.txt in the project root for full license information.
+// Licensed under the MIT License. See LICENSE.txt in the project root for full
+// license information.
 
 #include <cstdio>
 #include <ctime>
@@ -87,7 +88,7 @@ int main(int argc, char **argv) {
     if (strcmp(ext, "tif") == 0) {
         bool ok = dsmImage.read(readFileName);
         if (!ok) return -1;
-    } else if ((strcmp(ext, "las") == 0) || (strcmp(ext, "bpf") == 0)) {
+    } else {
         // First get the max Z values for the DSM.
         bool ok = dsmImage.readFromPointCloud(inputFileName, (float) dh_meters, shr3d::MAX_VALUE);
         if (!ok) return -1;
@@ -150,9 +151,6 @@ int main(int argc, char **argv) {
         sprintf(dsm2OutFileName, "%s_DSM2.tif\0", inputFileName);
         dsmImage.write(dsm2OutFileName, true);
 #endif
-    } else {
-        printf("Error: Unrecognized file type.");
-        return -1;
     }
 
     // Convert horizontal and vertical uncertainty values to bin units.
